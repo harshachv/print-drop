@@ -5,8 +5,8 @@ import './globals.css';
 const geist = Geist({ subsets: ['latin'], variable: '--font-geist' });
 
 export const metadata: Metadata = {
-  title: 'PrintDrop',
-  description: 'Upload, print, delete.',
+  title: 'Prdrop',
+  description: 'Upload, print, download, delete.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

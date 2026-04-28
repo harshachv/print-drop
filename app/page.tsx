@@ -56,21 +56,36 @@ export default function Home() {
       });
       if (error || !data) return;
 
-      const items: FileItem[] = data
-        .filter((f) => f.name !== '.emptyFolderPlaceholder')
-        .map((f) => {
-          const { data: urlData } = getSupabase().storage
-            .from(BUCKET)
-            .getPublicUrl(f.name);
-          const displayName = f.name.replace(/^\d+_/, '');
-          return {
-            name: f.name,
-            displayName,
-            size: f.metadata?.size ?? 0,
-            updatedAt: f.updated_at ?? f.created_at ?? '',
-            url: urlData.publicUrl,
-          };
-        });
+      const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+      const now = Date.now();
+
+      const expired = data.filter((f) => {
+        if (f.name === '.emptyFolderPlaceholder') return false;
+        const created = new Date(f.created_at ?? f.updated_at ?? 0).getTime();
+        return now - created > ONE_DAY_MS;
+      });
+
+      if (expired.length > 0) {
+        await getSupabase().storage.from(BUCKET).remove(expired.map((f) => f.name));
+      }
+
+      const fresh = data.filter(
+        (f) => f.name !== '.emptyFolderPlaceholder' && !expired.includes(f)
+      );
+
+      const items: FileItem[] = fresh.map((f) => {
+        const { data: urlData } = getSupabase().storage
+          .from(BUCKET)
+          .getPublicUrl(f.name);
+        const displayName = f.name.replace(/^\d+_/, '');
+        return {
+          name: f.name,
+          displayName,
+          size: f.metadata?.size ?? 0,
+          updatedAt: f.updated_at ?? f.created_at ?? '',
+          url: urlData.publicUrl,
+        };
+      });
 
       setFiles(items);
       setTotalSize(items.reduce((sum, f) => sum + f.size, 0));
@@ -149,8 +164,9 @@ export default function Home() {
 
         {/* Header */}
         <div className="mb-10">
-          <h1 className="text-2xl font-semibold tracking-tight text-gray-900">PrintDrop</h1>
-          <p className="text-sm text-gray-400 mt-1">Upload · Print · Delete</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Prdrop</h1>
+          <p className="text-sm text-gray-400 mt-1">Upload · Print · Download · Delete</p>
+          <p className="text-xs text-gray-300 mt-1">Files auto-delete after 24 hours</p>
         </div>
 
         {/* Storage bar */}
@@ -237,6 +253,14 @@ export default function Home() {
                   className="text-xs font-medium text-blue-600 hover:text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors shrink-0"
                 >
                   Print
+                </a>
+
+                <a
+                  href={file.url}
+                  download={file.displayName}
+                  className="text-xs font-medium text-gray-600 hover:text-gray-800 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors shrink-0"
+                >
+                  Download
                 </a>
 
                 <button
