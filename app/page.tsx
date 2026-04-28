@@ -98,7 +98,8 @@ export default function Home() {
         setUploadProgress((p) => Math.min(p + 5, 85));
       }, 300);
 
-      const path = `${Date.now()}_${file.name}`;
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const path = `${Date.now()}_${safeName}`;
       const { error } = await getSupabase().storage.from(BUCKET).upload(path, file);
 
       clearInterval(interval);
