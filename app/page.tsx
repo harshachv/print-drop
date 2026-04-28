@@ -19,23 +19,79 @@ function formatSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+function formatRelative(dateStr: string) {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
 }
 
-function fileIcon(name: string) {
-  const ext = name.split('.').pop()?.toLowerCase();
-  if (ext === 'pdf') return '📄';
-  if (['doc', 'docx'].includes(ext ?? '')) return '📝';
-  if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext ?? '')) return '🖼️';
-  if (['xls', 'xlsx'].includes(ext ?? '')) return '📊';
-  return '📁';
+function FileTypeIcon({ name }: { name: string }) {
+  const ext = name.split('.').pop()?.toLowerCase() ?? '';
+  const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'heic'].includes(ext);
+  const isPdf = ext === 'pdf';
+
+  return (
+    <div className="w-9 h-9 shrink-0 rounded-lg bg-stone-100 flex items-center justify-center">
+      {isImage ? (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="text-stone-500">
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <circle cx="9" cy="9" r="1.5" />
+          <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+        </svg>
+      ) : isPdf ? (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="text-stone-500">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <polyline points="14 2 14 8 20 8" />
+          <text x="8" y="17" fontSize="5" fontWeight="600" fill="currentColor" stroke="none">PDF</text>
+        </svg>
+      ) : (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="text-stone-500">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <polyline points="14 2 14 8 20 8" />
+          <line x1="9" y1="13" x2="15" y2="13" />
+          <line x1="9" y1="17" x2="15" y2="17" />
+        </svg>
+      )}
+    </div>
+  );
 }
+
+const IconPrinter = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="6 9 6 2 18 2 18 9" />
+    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+    <rect x="6" y="14" width="12" height="8" rx="1" />
+  </svg>
+);
+
+const IconDownload = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <polyline points="7 10 12 15 17 10" />
+    <line x1="12" y1="15" x2="12" y2="3" />
+  </svg>
+);
+
+const IconTrash = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="3 6 5 6 21 6" />
+    <path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6" />
+    <path d="M10 11v6M14 11v6" />
+    <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" />
+  </svg>
+);
+
+const IconUpload = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <polyline points="17 8 12 3 7 8" />
+    <line x1="12" y1="3" x2="12" y2="15" />
+  </svg>
+);
 
 export default function Home() {
   const [files, setFiles] = useState<FileItem[]>([]);
@@ -74,9 +130,7 @@ export default function Home() {
       );
 
       const items: FileItem[] = fresh.map((f) => {
-        const { data: urlData } = getSupabase().storage
-          .from(BUCKET)
-          .getPublicUrl(f.name);
+        const { data: urlData } = getSupabase().storage.from(BUCKET).getPublicUrl(f.name);
         const displayName = f.name.replace(/^\d+_/, '');
         return {
           name: f.name,
@@ -101,7 +155,7 @@ export default function Home() {
   const handleUpload = useCallback(
     async (file: File) => {
       if (totalSize + file.size > MAX_STORAGE) {
-        alert('Storage limit reached (500 MB). Delete some files first.');
+        alert('Storage limit reached (500 MB).');
         return;
       }
 
@@ -123,7 +177,7 @@ export default function Home() {
         setUploading(false);
         setUploadProgress(0);
         setUploadName('');
-        alert(`Upload failed: ${error.message}\n\nMake sure Supabase storage policies allow public uploads.`);
+        alert(`Upload failed: ${error.message}`);
         return;
       }
 
@@ -159,39 +213,51 @@ export default function Home() {
   const usagePercent = Math.min((totalSize / MAX_STORAGE) * 100, 100);
 
   return (
-    <main className="min-h-screen bg-gray-50">
-      <div className="max-w-xl mx-auto px-5 py-14">
+    <main className="min-h-screen bg-[#fafaf9]">
+      <div className="max-w-[560px] mx-auto px-6 pt-20 pb-16">
 
         {/* Header */}
-        <div className="mb-10">
-          <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Prdrop</h1>
-          <p className="text-sm text-gray-400 mt-1">Upload · Print · Download · Delete</p>
-          <p className="text-xs text-gray-300 mt-1">Files auto-delete after 24 hours</p>
-        </div>
-
-        {/* Storage bar */}
-        <div className="mb-8">
-          <div className="flex justify-between text-xs text-gray-400 mb-2">
-            <span>{formatSize(totalSize)} used</span>
-            <span>500 MB limit</span>
+        <header className="mb-12">
+          <div className="flex items-center gap-2.5 mb-3">
+            <div className="w-7 h-7 rounded-lg bg-stone-900 flex items-center justify-center">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 19V5M5 12l7-7 7 7" />
+              </svg>
+            </div>
+            <h1 className="text-[17px] font-semibold tracking-tight text-stone-900">Prdrop</h1>
           </div>
-          <div className="h-1 bg-gray-200 rounded-full overflow-hidden">
+          <p className="text-[13px] text-stone-500 leading-relaxed">
+            Drop a file. Print it from any browser. Files clear themselves after 24 hours.
+          </p>
+        </header>
+
+        {/* Storage indicator */}
+        <section className="mb-6">
+          <div className="flex items-baseline justify-between mb-2">
+            <span className="text-[12px] text-stone-500 tabular-nums">
+              <span className="text-stone-900 font-medium">{formatSize(totalSize)}</span>
+              <span className="mx-1.5 text-stone-300">/</span>
+              500 MB
+            </span>
+            <span className="text-[11px] text-stone-400 tabular-nums">{Math.round(usagePercent)}%</span>
+          </div>
+          <div className="h-[3px] bg-stone-200/70 rounded-full overflow-hidden">
             <div
-              className="h-full rounded-full transition-all duration-700"
+              className="h-full rounded-full transition-all duration-700 ease-out"
               style={{
                 width: `${usagePercent}%`,
-                background: usagePercent > 85 ? '#f87171' : '#3b82f6',
+                background: usagePercent > 85 ? '#dc2626' : '#1c1917',
               }}
             />
           </div>
-        </div>
+        </section>
 
         {/* Upload zone */}
-        <div
-          className={`mb-8 border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer select-none transition-all duration-150 ${
+        <section
+          className={`mb-8 rounded-2xl p-12 text-center cursor-pointer select-none transition-all duration-200 border ${
             dragging
-              ? 'border-blue-400 bg-blue-50'
-              : 'border-gray-200 bg-white hover:border-gray-300'
+              ? 'border-stone-900 bg-stone-900/5 ring-4 ring-stone-900/5'
+              : 'border-stone-200 bg-white hover:border-stone-300 hover:bg-stone-50/50'
           }`}
           onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
           onDragLeave={() => setDragging(false)}
@@ -206,74 +272,105 @@ export default function Home() {
           />
 
           {uploading ? (
-            <div className="space-y-3">
-              <p className="text-sm text-gray-500 truncate max-w-xs mx-auto">{uploadName}</p>
-              <div className="h-1 bg-gray-100 rounded-full overflow-hidden max-w-[200px] mx-auto">
+            <div className="space-y-4">
+              <p className="text-[13px] text-stone-700 font-medium truncate max-w-[280px] mx-auto">{uploadName}</p>
+              <div className="h-[2px] bg-stone-100 rounded-full overflow-hidden max-w-[220px] mx-auto">
                 <div
-                  className="h-full bg-blue-500 rounded-full transition-all duration-200"
+                  className="h-full bg-stone-900 rounded-full transition-all duration-200"
                   style={{ width: `${uploadProgress}%` }}
                 />
               </div>
-              <p className="text-xs text-gray-400">{Math.round(uploadProgress)}%</p>
+              <p className="text-[11px] text-stone-400 tabular-nums">{Math.round(uploadProgress)}%</p>
             </div>
           ) : (
-            <div className="space-y-2">
-              <p className="text-3xl">↑</p>
-              <p className="text-sm font-medium text-gray-700">Drop a file here</p>
-              <p className="text-xs text-gray-400">or click to browse</p>
+            <div className="flex flex-col items-center gap-3">
+              <div className={`w-11 h-11 rounded-full flex items-center justify-center transition-colors ${
+                dragging ? 'bg-stone-900 text-white' : 'bg-stone-100 text-stone-700'
+              }`}>
+                <IconUpload />
+              </div>
+              <div>
+                <p className="text-[14px] font-medium text-stone-900">
+                  {dragging ? 'Release to upload' : 'Drop a file or click to browse'}
+                </p>
+                <p className="text-[12px] text-stone-400 mt-1">PDF, image, or document up to 500 MB</p>
+              </div>
             </div>
           )}
-        </div>
+        </section>
 
         {/* File list */}
-        {loading ? (
-          <div className="text-sm text-gray-400 text-center py-10">Loading...</div>
-        ) : files.length === 0 ? (
-          <div className="text-sm text-gray-400 text-center py-10">No files yet.</div>
-        ) : (
-          <ul className="space-y-2">
-            {files.map((file) => (
-              <li
-                key={file.name}
-                className="flex items-center gap-3 bg-white border border-gray-100 rounded-xl px-4 py-3"
-              >
-                <span className="text-xl shrink-0">{fileIcon(file.displayName)}</span>
+        <section>
+          {!loading && files.length > 0 && (
+            <div className="flex items-center justify-between mb-3 px-1">
+              <h2 className="text-[11px] font-medium text-stone-400 uppercase tracking-wider">
+                Files
+              </h2>
+              <span className="text-[11px] text-stone-400 tabular-nums">{files.length}</span>
+            </div>
+          )}
 
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">{file.displayName}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {formatSize(file.size)} · {formatDate(file.updatedAt)}
-                  </p>
-                </div>
-
-                <a
-                  href={file.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs font-medium text-blue-600 hover:text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors shrink-0"
+          {loading ? (
+            <div className="text-[13px] text-stone-400 text-center py-12">Loading…</div>
+          ) : files.length === 0 ? (
+            <div className="text-center py-16">
+              <p className="text-[13px] text-stone-400">No files yet</p>
+            </div>
+          ) : (
+            <ul className="space-y-1.5">
+              {files.map((file) => (
+                <li
+                  key={file.name}
+                  className="group flex items-center gap-3 bg-white border border-stone-200/70 rounded-xl px-3 py-2.5 hover:border-stone-300 transition-colors"
                 >
-                  Print
-                </a>
+                  <FileTypeIcon name={file.displayName} />
 
-                <a
-                  href={file.url}
-                  download={file.displayName}
-                  className="text-xs font-medium text-gray-600 hover:text-gray-800 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors shrink-0"
-                >
-                  Download
-                </a>
+                  <div className="flex-1 min-w-0 mr-2">
+                    <p className="text-[13px] font-medium text-stone-900 truncate leading-tight">{file.displayName}</p>
+                    <p className="text-[11px] text-stone-400 mt-0.5 tabular-nums">
+                      {formatSize(file.size)} · {formatRelative(file.updatedAt)}
+                    </p>
+                  </div>
 
-                <button
-                  onClick={() => handleDelete(file)}
-                  disabled={deletingKey === file.name}
-                  className="text-xs font-medium text-red-400 hover:text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors shrink-0 disabled:opacity-40"
-                >
-                  {deletingKey === file.name ? '…' : 'Delete'}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
+                  <div className="flex items-center gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
+                    <a
+                      href={file.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Print"
+                      className="p-2 text-stone-500 hover:text-stone-900 hover:bg-stone-100 rounded-md transition-colors"
+                    >
+                      <IconPrinter />
+                    </a>
+                    <a
+                      href={file.url}
+                      download={file.displayName}
+                      title="Download"
+                      className="p-2 text-stone-500 hover:text-stone-900 hover:bg-stone-100 rounded-md transition-colors"
+                    >
+                      <IconDownload />
+                    </a>
+                    <button
+                      onClick={() => handleDelete(file)}
+                      disabled={deletingKey === file.name}
+                      title="Delete"
+                      className="p-2 text-stone-500 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors disabled:opacity-40"
+                    >
+                      <IconTrash />
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        {/* Footer */}
+        <footer className="mt-16 pt-6 border-t border-stone-200/60">
+          <p className="text-[11px] text-stone-400 text-center">
+            Files are publicly accessible via direct URL · Auto-deleted after 24h
+          </p>
+        </footer>
       </div>
     </main>
   );
