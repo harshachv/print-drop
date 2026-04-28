@@ -1,65 +1,259 @@
-import Image from "next/image";
+'use client';
+
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { storage } from '@/lib/firebase';
+import {
+  ref,
+  uploadBytesResumable,
+  listAll,
+  getDownloadURL,
+  deleteObject,
+  getMetadata,
+} from 'firebase/storage';
+
+interface FileItem {
+  name: string;
+  displayName: string;
+  size: number;
+  updatedAt: string;
+  url: string;
+  storageRef: ReturnType<typeof ref>;
+}
+
+const MAX_STORAGE = 500 * 1024 * 1024;
+
+function formatSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatDate(dateStr: string) {
+  return new Date(dateStr).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function fileIcon(name: string) {
+  const ext = name.split('.').pop()?.toLowerCase();
+  if (ext === 'pdf') return '📄';
+  if (['doc', 'docx'].includes(ext ?? '')) return '📝';
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext ?? '')) return '🖼️';
+  if (['xls', 'xlsx'].includes(ext ?? '')) return '📊';
+  return '📁';
+}
 
 export default function Home() {
+  const [files, setFiles] = useState<FileItem[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadName, setUploadName] = useState('');
+  const [dragging, setDragging] = useState(false);
+  const [totalSize, setTotalSize] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [deletingKey, setDeletingKey] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const loadFiles = useCallback(async () => {
+    setLoading(true);
+    try {
+      const listRef = ref(storage, 'files/');
+      const result = await listAll(listRef);
+
+      const items = await Promise.all(
+        result.items.map(async (item) => {
+          const [url, meta] = await Promise.all([getDownloadURL(item), getMetadata(item)]);
+          const displayName = meta.name.replace(/^\d+_/, '');
+          return {
+            name: meta.name,
+            displayName,
+            size: meta.size,
+            updatedAt: meta.updated,
+            url,
+            storageRef: item,
+          };
+        })
+      );
+
+      items.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+      setFiles(items);
+      setTotalSize(items.reduce((sum, f) => sum + f.size, 0));
+    } catch {
+      // storage not configured yet
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadFiles();
+  }, [loadFiles]);
+
+  const handleUpload = useCallback(
+    async (file: File) => {
+      if (totalSize + file.size > MAX_STORAGE) {
+        alert('Storage limit reached (500 MB). Delete some files first.');
+        return;
+      }
+
+      setUploading(true);
+      setUploadProgress(0);
+      setUploadName(file.name);
+
+      const fileRef = ref(storage, `files/${Date.now()}_${file.name}`);
+      const task = uploadBytesResumable(fileRef, file);
+
+      task.on(
+        'state_changed',
+        (snap) => setUploadProgress((snap.bytesTransferred / snap.totalBytes) * 100),
+        () => setUploading(false),
+        () => {
+          setUploading(false);
+          setUploadProgress(0);
+          setUploadName('');
+          loadFiles();
+        }
+      );
+    },
+    [totalSize, loadFiles]
+  );
+
+  const handleDelete = async (file: FileItem) => {
+    setDeletingKey(file.name);
+    try {
+      await deleteObject(file.storageRef);
+      await loadFiles();
+    } finally {
+      setDeletingKey(null);
+    }
+  };
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setDragging(false);
+      const file = e.dataTransfer.files[0];
+      if (file) handleUpload(file);
+    },
+    [handleUpload]
+  );
+
+  const usagePercent = Math.min((totalSize / MAX_STORAGE) * 100, 100);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <main className="min-h-screen bg-gray-50">
+      <div className="max-w-xl mx-auto px-5 py-14">
+
+        {/* Header */}
+        <div className="mb-10">
+          <h1 className="text-2xl font-semibold tracking-tight text-gray-900">PrintDrop</h1>
+          <p className="text-sm text-gray-400 mt-1">Upload · Print · Delete</p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+
+        {/* Storage bar */}
+        <div className="mb-8">
+          <div className="flex justify-between text-xs text-gray-400 mb-2">
+            <span>{formatSize(totalSize)} used</span>
+            <span>500 MB limit</span>
+          </div>
+          <div className="h-1 bg-gray-200 rounded-full overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all duration-700"
+              style={{
+                width: `${usagePercent}%`,
+                background: usagePercent > 85 ? '#f87171' : '#3b82f6',
+              }}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+          </div>
         </div>
-      </main>
-    </div>
+
+        {/* Upload zone */}
+        <div
+          className={`mb-8 border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer select-none transition-all duration-150 ${
+            dragging
+              ? 'border-blue-400 bg-blue-50'
+              : 'border-gray-200 bg-white hover:border-gray-300'
+          }`}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={handleDrop}
+          onClick={() => !uploading && inputRef.current?.click()}
+        >
+          <input
+            ref={inputRef}
+            type="file"
+            className="hidden"
+            onChange={(e) => e.target.files?.[0] && handleUpload(e.target.files[0])}
+          />
+
+          {uploading ? (
+            <div className="space-y-3">
+              <p className="text-sm text-gray-500 truncate max-w-xs mx-auto">{uploadName}</p>
+              <div className="h-1 bg-gray-100 rounded-full overflow-hidden max-w-[200px] mx-auto">
+                <div
+                  className="h-full bg-blue-500 rounded-full transition-all duration-200"
+                  style={{ width: `${uploadProgress}%` }}
+                />
+              </div>
+              <p className="text-xs text-gray-400">{Math.round(uploadProgress)}%</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-3xl">↑</p>
+              <p className="text-sm font-medium text-gray-700">Drop a file here</p>
+              <p className="text-xs text-gray-400">or click to browse</p>
+            </div>
+          )}
+        </div>
+
+        {/* File list */}
+        {loading ? (
+          <div className="text-sm text-gray-400 text-center py-10">Loading...</div>
+        ) : files.length === 0 ? (
+          <div className="text-sm text-gray-400 text-center py-10">No files yet.</div>
+        ) : (
+          <ul className="space-y-2">
+            {files.map((file) => (
+              <li
+                key={file.name}
+                className="flex items-center gap-3 bg-white border border-gray-100 rounded-xl px-4 py-3"
+              >
+                <span className="text-xl shrink-0">{fileIcon(file.displayName)}</span>
+
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">{file.displayName}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {formatSize(file.size)} · {formatDate(file.updatedAt)}
+                  </p>
+                </div>
+
+                <a
+                  href={file.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-medium text-blue-600 hover:text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors shrink-0"
+                >
+                  Print
+                </a>
+
+                <button
+                  onClick={() => handleDelete(file)}
+                  disabled={deletingKey === file.name}
+                  className="text-xs font-medium text-red-400 hover:text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors shrink-0 disabled:opacity-40"
+                >
+                  {deletingKey === file.name ? '…' : 'Delete'}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </main>
   );
 }
