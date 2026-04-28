@@ -1,15 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { storage } from '@/lib/firebase';
-import {
-  ref,
-  uploadBytesResumable,
-  listAll,
-  getDownloadURL,
-  deleteObject,
-  getMetadata,
-} from 'firebase/storage';
+import { getSupabase, BUCKET } from '@/lib/supabase';
 
 interface FileItem {
   name: string;
@@ -17,7 +9,6 @@ interface FileItem {
   size: number;
   updatedAt: string;
   url: string;
-  storageRef: ReturnType<typeof ref>;
 }
 
 const MAX_STORAGE = 500 * 1024 * 1024;
@@ -60,29 +51,29 @@ export default function Home() {
   const loadFiles = useCallback(async () => {
     setLoading(true);
     try {
-      const listRef = ref(storage, 'files/');
-      const result = await listAll(listRef);
+      const { data, error } = await getSupabase().storage.from(BUCKET).list('', {
+        sortBy: { column: 'created_at', order: 'desc' },
+      });
+      if (error || !data) return;
 
-      const items = await Promise.all(
-        result.items.map(async (item) => {
-          const [url, meta] = await Promise.all([getDownloadURL(item), getMetadata(item)]);
-          const displayName = meta.name.replace(/^\d+_/, '');
+      const items: FileItem[] = data
+        .filter((f) => f.name !== '.emptyFolderPlaceholder')
+        .map((f) => {
+          const { data: urlData } = getSupabase().storage
+            .from(BUCKET)
+            .getPublicUrl(f.name);
+          const displayName = f.name.replace(/^\d+_/, '');
           return {
-            name: meta.name,
+            name: f.name,
             displayName,
-            size: meta.size,
-            updatedAt: meta.updated,
-            url,
-            storageRef: item,
+            size: f.metadata?.size ?? 0,
+            updatedAt: f.updated_at ?? f.created_at ?? '',
+            url: urlData.publicUrl,
           };
-        })
-      );
+        });
 
-      items.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
       setFiles(items);
       setTotalSize(items.reduce((sum, f) => sum + f.size, 0));
-    } catch {
-      // storage not configured yet
     } finally {
       setLoading(false);
     }
@@ -103,20 +94,24 @@ export default function Home() {
       setUploadProgress(0);
       setUploadName(file.name);
 
-      const fileRef = ref(storage, `files/${Date.now()}_${file.name}`);
-      const task = uploadBytesResumable(fileRef, file);
+      // Simulate progress while uploading (Supabase JS v2 doesn't stream progress)
+      const interval = setInterval(() => {
+        setUploadProgress((p) => Math.min(p + 8, 90));
+      }, 200);
 
-      task.on(
-        'state_changed',
-        (snap) => setUploadProgress((snap.bytesTransferred / snap.totalBytes) * 100),
-        () => setUploading(false),
-        () => {
-          setUploading(false);
-          setUploadProgress(0);
-          setUploadName('');
-          loadFiles();
-        }
-      );
+      const path = `${Date.now()}_${file.name}`;
+      const { error } = await getSupabase().storage.from(BUCKET).upload(path, file);
+
+      clearInterval(interval);
+      setUploadProgress(100);
+
+      setTimeout(() => {
+        setUploading(false);
+        setUploadProgress(0);
+        setUploadName('');
+        if (!error) loadFiles();
+        else alert(`Upload failed: ${error.message}`);
+      }, 400);
     },
     [totalSize, loadFiles]
   );
@@ -124,7 +119,7 @@ export default function Home() {
   const handleDelete = async (file: FileItem) => {
     setDeletingKey(file.name);
     try {
-      await deleteObject(file.storageRef);
+      await getSupabase().storage.from(BUCKET).remove([file.name]);
       await loadFiles();
     } finally {
       setDeletingKey(null);
@@ -177,10 +172,7 @@ export default function Home() {
               ? 'border-blue-400 bg-blue-50'
               : 'border-gray-200 bg-white hover:border-gray-300'
           }`}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDragging(true);
-          }}
+          onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
           onDragLeave={() => setDragging(false)}
           onDrop={handleDrop}
           onClick={() => !uploading && inputRef.current?.click()}
