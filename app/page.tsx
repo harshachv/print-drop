@@ -94,24 +94,28 @@ export default function Home() {
       setUploadProgress(0);
       setUploadName(file.name);
 
-      // Simulate progress while uploading (Supabase JS v2 doesn't stream progress)
       const interval = setInterval(() => {
-        setUploadProgress((p) => Math.min(p + 8, 90));
-      }, 200);
+        setUploadProgress((p) => Math.min(p + 5, 85));
+      }, 300);
 
       const path = `${Date.now()}_${file.name}`;
       const { error } = await getSupabase().storage.from(BUCKET).upload(path, file);
 
       clearInterval(interval);
-      setUploadProgress(100);
 
-      setTimeout(() => {
+      if (error) {
         setUploading(false);
         setUploadProgress(0);
         setUploadName('');
-        if (!error) loadFiles();
-        else alert(`Upload failed: ${error.message}`);
-      }, 400);
+        alert(`Upload failed: ${error.message}\n\nMake sure Supabase storage policies allow public uploads.`);
+        return;
+      }
+
+      setUploadProgress(100);
+      await loadFiles();
+      setUploading(false);
+      setUploadProgress(0);
+      setUploadName('');
     },
     [totalSize, loadFiles]
   );
